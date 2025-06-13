@@ -1,0 +1,101 @@
+services:
+  nextcloud:
+    # IMPORTANT: Replace with your GitHub username and repository name.
+    # This image will be pulled from GitHub Container Registry.
+    image: ghcr.io/dnviti/nextcloud:stable
+    container_name: nextcloud
+    restart: always
+    ports:
+      - ${NC_WEB_PORT}:80
+    volumes:
+      - /docker/nextcloud-stack/nextcloud/html:/var/www/html
+      - /docker/nextcloud-stack/nextcloud/data:/home/nextdata
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - MYSQL_PASSWORD=${NC_DB_PASS}
+      - MYSQL_DATABASE=${NC_DB_NAME-nextcloud}
+      - MYSQL_USER=${NC_DB_USER-nextcloud}
+      - MYSQL_HOST=${NC_DB_HOST}:${NC_DB_PORT-3306}
+      - NEXTCLOUD_ADMIN_USER=${NC_ADMIN_USER-admin}
+      - NEXTCLOUD_ADMIN_PASSWORD=${NC_ADMIN_PASS}
+      - NEXTCLOUD_DATA_DIR=${NC_DATA_DIR-/home/nextdata}
+      - REDIS_HOST=${NC_REDIS_HOST}
+      - REDIS_HOST_PORT=${NC_REDIS_PORT-6379}
+      - REDIS_HOST_PASSWORD=${NC_REDIS_PASSWORD}
+      - SMTP_DEBUG=${NC_SMTP_DEBUG-false}
+      - SMTP_HOST=${NC_SMTP_HOST}
+      - SMTP_PORT=${NC_SMTP_PORT-25} # 25 unsecure, 465 TLS, 587 STARTLS
+      - SMTP_SECURE=${NC_SMTP_SECURE-false}
+      - SMTP_AUTHTYPE=${NC_SMTP_AUTH_TYPE-NONE} # LOGIN, PLAIN
+      - SMTP_NAME=${NC_SMTP_NAME} # SMTP Username
+      - SMTP_PASSWORD=${NC_SMTP_PASSWORD} # SMTP Password
+      - MAIL_FROM_ADDRESS=${NC_SMTP_FROM_NAME-cloud} # the 'from' field in the emails sent by Nextcloud
+      - MAIL_DOMAIN=${NC_SMTP_FROM_DOMAIN} # mail with different domain than Nextcloud
+      - NEXTCLOUD_TRUSTED_DOMAINS=${NC_TRUSTED_DOMAINS}
+      - APACHE_DISABLE_REWRITE_IP=${NC_DISABLE_REWRITE_IP-1}
+      - OVERWRITEHOST=${NC_OVERWRITE_HOST}
+      - OVERWRITEPROTOCOL=${NC_OVERWRITE_PROTOCOL-https}
+    env_file:
+      - .env
+    # This label tells Watchtower to automatically update this container
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    networks:
+       net:
+        aliases:
+          - nextcloud
+          - cloud
+
+  onlyoffice:
+    image: onlyoffice/documentserver
+    container_name: onlyoffice
+    restart: always
+    environment:
+      - DB_TYPE=${OO_DB_TYPE-mysql}
+      - DB_HOST=${OO_DB_HOST}
+      - DB_PORT=${OO_DB_PORT-3306}
+      - DB_NAME=${OO_DB_NAME-onlyoffice}
+      - DB_USER=${OO_DB_USER-onlyoffice}
+      - DB_PWD=${OO_DB_PASS}
+      - AMQP_URI=amqp://${OO_APMQ_USER-onlyoffice}:${OO_APMQ_PASS}@${OO_APMQ_HOST}:${OO_APMQ_PORT-5672}
+      - JWT_ENABLED=${OO_JWT_ENABLED-true}
+      - JWT_SECRET=${OO_JWT_SECRET}
+      - JWT_HEADER=${OO_JWT_HEADER-Authorization}
+      - JWT_IN_BODY=${OO_IN_BODY-true}
+    env_file:
+      - .env
+    ports:
+      - ${OO_WEB_PORT}:443
+    volumes:
+       - /var/log/onlyoffice
+       - /var/lib/onlyoffice/documentserver/App_Data/cache/files
+       - /var/www/onlyoffice/documentserver-example/public/files
+       - /usr/share/fonts
+       - /docker/nextcloud-stack/onlyoffice/Data:/var/www/onlyoffice/Data
+       - /etc/localtime:/etc/localtime:ro
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    networks:
+       net:
+        aliases:
+          - onlyoffice
+          - office
+
+  watchtower:
+    image: containrrr/watchtower
+    container_name: watchtower
+    restart: always
+    volumes:
+      # Mount the docker socket so Watchtower can interact with the Docker API
+      - /var/run/docker.sock:/var/run/docker.sock
+    # Check for new images once every 24 hours (86400 seconds)
+    command: --interval 86400
+    networks:
+      - net
+
+networks:
+  net:
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.30.0.0/24

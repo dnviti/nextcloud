@@ -1,0 +1,93 @@
+name: Mirror All Nextcloud Tags
+
+on:
+  # Schedule to run once a day at 2:00 AM UTC
+  schedule:
+    - cron: '0 2 * * *'
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  # This job gets all tags from the Docker Hub 'nextcloud' repository
+  get-tags:
+    runs-on: ubuntu-latest
+    outputs:
+      tags: ${{ steps.get-tags.outputs.tags }}
+    steps:
+      - name: Get all tags from Docker Hub for 'nextcloud'
+        id: get-tags
+        uses: docker-practice/actions-tagger@v2
+        with:
+          registry: "" # An empty string means Docker Hub
+          repository: "nextcloud"
+          # You can optionally use a regex filter. For example, to only get version tags:
+          # filter: '^[0-9]+\.[0-9]+\.[0-9]+$'
+
+  # This job runs a matrix build for each tag found by the previous job
+  build-for-each-tag:
+    needs: get-tags
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # Required to push to GitHub Container Registry
+
+    strategy:
+      fail-fast: false # Prevents one failed build from canceling all others
+      matrix:
+        # The 'fromJSON' function converts the JSON string of tags into a build matrix
+        tag: ${{ fromJson(needs.get-tags.outputs.tags) }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Check if image needs update by comparing digests
+        id: check_update
+        run: |
+          # Note: The '|| echo "not_found"' handles cases where one of the images doesn't exist yet.
+          OFFICIAL_DIGEST=$(docker buildx imagetools inspect docker.io/nextcloud:${{ matrix.tag }} --format '{{.Manifest.Digest}}' || echo "not_found")
+          CUSTOM_DIGEST=$(docker buildx imagetools inspect ghcr.io/${{ github.repository }}:${{ matrix.tag }} --format '{{.Manifest.Digest}}' || echo "not_found")
+          
+          echo "Official image (docker.io/nextcloud:${{ matrix.tag }}) digest: $OFFICIAL_DIGEST"
+          echo "Custom image (ghcr.io/${{ github.repository }}:${{ matrix.tag }}) digest: $CUSTOM_DIGEST"
+
+          if [ "$OFFICIAL_DIGEST" == "$CUSTOM_DIGEST" ]; then
+            echo "Image ghcr.io/${{ github.repository }}:${{ matrix.tag }} is already up-to-date."
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "Image needs to be built/updated."
+            echo "skip=false" >> $GITHUB_OUTPUT
+      
+      - name: Log in to GitHub Container Registry
+        if: steps.check_update.outputs.skip == 'false'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image for tag ${{ matrix.tag }}
+        if: steps.check_update.outputs.skip == 'false'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          # Pass the current tag from the matrix as a build argument to the Dockerfile
+          build-args: |
+            NEXTCLOUD_TAG=${{ matrix.tag }}
+          push: true
+          # Tag the custom image with the same tag as the base image
+          tags: ghcr.io/${{ github.repository }}:${{ matrix.tag }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ matrix.tag }}
+          # Use cache to speed up subsequent builds, scoped per tag
+          cache-from: type=gha,scope=${{ github.workflow }}-${{ matrix.tag }}
+          cache-to: type=gha,scope=${{ github.workflow }}-${{ matrix.tag }},mode=max
+
+      - name: Skip message
+        if: steps.check_update.outputs.skip == 'true'
+        run: echo "Skipping build for tag ${{ matrix.tag }} as it is already up to date."
