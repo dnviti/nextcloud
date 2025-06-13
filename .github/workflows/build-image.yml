@@ -1,4 +1,4 @@
-name: Mirror All Nextcloud Tags
+name: Mirror Nextcloud Stable & Latest Tags
 
 on:
   # Schedule to run once a day at 2:00 AM UTC
@@ -9,22 +9,21 @@ on:
   workflow_dispatch:
 
 jobs:
-  # This job gets all tags from the Docker Hub 'nextcloud' repository using the official API
+  # This job now defines a static list of tags to build.
   get-tags:
     runs-on: ubuntu-latest
     outputs:
       tags: ${{ steps.get-tags.outputs.tags }}
     steps:
-      - name: Get all tags from Docker Hub for 'nextcloud'
+      - name: Define tags to build
         id: get-tags
         run: |
-          # Use the Docker Hub API to fetch tags and format them as a JSON array for the matrix
-          # This is more reliable than using a third-party action.
-          TAGS_JSON=$(curl -s "https://hub.docker.com/v2/repositories/library/nextcloud/tags?page_size=1000" | jq -r '[.results[].name] | @json')
-          echo "Found tags: $TAGS_JSON"
+          # Define a static JSON array of the tags you want to build.
+          TAGS_JSON='["latest", "stable"]'
+          echo "Building for tags: $TAGS_JSON"
           echo "tags=$TAGS_JSON" >> $GITHUB_OUTPUT
 
-  # This job runs a matrix build for each tag found by the previous job
+  # This job runs a matrix build for each tag defined above ('latest' and 'stable').
   build-for-each-tag:
     needs: get-tags
     runs-on: ubuntu-latest
