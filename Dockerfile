@@ -2,12 +2,12 @@
 ARG NEXTCLOUD_TAG=stable
 FROM nextcloud:${NEXTCLOUD_TAG}
 
-# Switch to the root user to gain permissions for installation
+# Switch to the root user to install packages
 USER root
 
-# Install gosu for privilege de-escalation, plus all your required packages
+# Install supervisor and all your other required packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gosu \
+    supervisor \
     cron \
     ffmpeg \
     ghostscript \
@@ -25,21 +25,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     smbclient \
     && rm -rf /var/lib/apt/lists/*
 
+# Copy the supervisor configuration file into the container
+COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
 # Redirect Apache logs to stdout/stderr to bypass filesystem permission issues.
 RUN echo "\nErrorLog /dev/stderr\nTransferLog /dev/stdout\n" > /etc/apache2/conf-available/docker-logs.conf \
     && a2enconf docker-logs
 
-# Create a crontab file for the Nextcloud cron job
-RUN echo "*/5  * * * * www-data php -f /var/www/html/cron.php" > /etc/cron.d/nextcloud-cron \
-    # Give execution rights on the cron job
-    && chmod 0644 /etc/cron.d/nextcloud-cron
-
-# Copy the custom entrypoint script into the container
-COPY docker-entrypoint.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
-
-# Set the new entrypoint. This will run as root.
-ENTRYPOINT ["docker-entrypoint.sh"]
-
-# The original entrypoint becomes the default command passed to our script
-CMD ["apache2-foreground"]
+# The CMD will now start supervisor, which in turn manages all other processes.
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
