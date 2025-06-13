@@ -5,8 +5,9 @@ FROM nextcloud:${NEXTCLOUD_TAG}
 # Switch to the root user to gain permissions for installation
 USER root
 
-# Run the command to update package lists and install all your required tools
-RUN apt-get update && apt-get install -y \
+# Install gosu for privilege de-escalation, plus all your required packages
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gosu \
     cron \
     ffmpeg \
     ghostscript \
@@ -22,9 +23,7 @@ RUN apt-get update && apt-get install -y \
     ncdu \
     net-tools \
     smbclient \
-    --no-install-recommends && \
-    # Clean up the apt cache to save space
-    rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/*
 
 # Create a crontab file for the Nextcloud cron job
 RUN echo "*/5  * * * * www-data php -f /var/www/html/cron.php" > /etc/cron.d/nextcloud-cron \
@@ -35,11 +34,8 @@ RUN echo "*/5  * * * * www-data php -f /var/www/html/cron.php" > /etc/cron.d/nex
 COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Set the new entrypoint
+# Set the new entrypoint. This will run as root.
 ENTRYPOINT ["docker-entrypoint.sh"]
 
-# The original entrypoint becomes the default command
+# The original entrypoint becomes the default command passed to our script
 CMD ["apache2-foreground"]
-
-# Switch back to the non-privileged www-data user for security
-USER www-data

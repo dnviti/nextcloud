@@ -5,6 +5,6 @@ set -e
 # This ensures it has permissions to write its PID file.
 /usr/sbin/cron -f &
 
-# Execute the original command passed to the container (e.g., "apache2-foreground")
-# This command will run as the default 'www-data' user defined in the Dockerfile.
-exec "$@"
+# Use gosu to drop from root to the non-privileged 'www-data' user
+# and then execute the main command passed to this script (e.g., "apache2-foreground").
+exec gosu www-data "$@"
