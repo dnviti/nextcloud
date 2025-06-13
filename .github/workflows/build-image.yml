@@ -44,31 +44,35 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Check if image needs update by comparing digests
-        id: check_update
-        run: |
-          # Note: The '|| echo "not_found"' handles cases where one of the images doesn't exist yet.
-          OFFICIAL_DIGEST=$(docker buildx imagetools inspect docker.io/nextcloud:${{ matrix.tag }} --format '{{.Manifest.Digest}}' || echo "not_found")
-          CUSTOM_DIGEST=$(docker buildx imagetools inspect ghcr.io/${{ github.repository }}:${{ matrix.tag }} --format '{{.Manifest.Digest}}' || echo "not_found")
-          
-          echo "Official image (docker.io/nextcloud:${{ matrix.tag }}) digest: $OFFICIAL_DIGEST"
-          echo "Custom image (ghcr.io/${{ github.repository }}:${{ matrix.tag }}) digest: $CUSTOM_DIGEST"
-
-          if [ "$OFFICIAL_DIGEST" == "$CUSTOM_DIGEST" ]; then
-            echo "Image ghcr.io/${{ github.repository }}:${{ matrix.tag }} is already up-to-date."
-            echo "skip=true" >> $GITHUB_OUTPUT
-          else
-            echo "Image needs to be built/updated."
-            echo "skip=false" >> $GITHUB_OUTPUT
-      
+      # CORRECTED: Log in to GHCR *before* inspecting the custom image
       - name: Log in to GitHub Container Registry
-        if: steps.check_update.outputs.skip == 'false'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # CORRECTED: Check for updates after logging in
+      - name: Check if image needs update by comparing digests
+        id: check_update
+        run: |
+          # Use --format to get only the digest, making the output clean and reliable.
+          # The '|| true' ensures that if an image doesn't exist, the command doesn't fail the step.
+          OFFICIAL_DIGEST=$(docker buildx imagetools inspect docker.io/nextcloud:${{ matrix.tag }} --format '{{.Manifest.Digest}}' || true)
+          CUSTOM_DIGEST=$(docker buildx imagetools inspect ghcr.io/${{ github.repository }}:${{ matrix.tag }} --format '{{.Manifest.Digest}}' || true)
+          
+          echo "Official image digest: $OFFICIAL_DIGEST"
+          echo "Custom image digest:   $CUSTOM_DIGEST"
+
+          # Only build if digests are different and the official digest was found
+          if [ -n "$OFFICIAL_DIGEST" ] && [ "$OFFICIAL_DIGEST" != "$CUSTOM_DIGEST" ]; then
+            echo "Image needs to be built/updated."
+            echo "skip=false" >> $GITHUB_OUTPUT
+          else
+            echo "Image is already up-to-date or official image not found. Skipping."
+            echo "skip=true" >> $GITHUB_OUTPUT
+          fi
+      
       - name: Build and push Docker image for tag ${{ matrix.tag }}
         if: steps.check_update.outputs.skip == 'false'
         uses: docker/build-push-action@v5
