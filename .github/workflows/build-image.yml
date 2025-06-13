@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  # This job gets all tags from the Docker Hub 'nextcloud' repository
+  # This job gets all tags from the Docker Hub 'nextcloud' repository using the official API
   get-tags:
     runs-on: ubuntu-latest
     outputs:
@@ -17,12 +17,12 @@ jobs:
     steps:
       - name: Get all tags from Docker Hub for 'nextcloud'
         id: get-tags
-        uses: docker-practice/actions-tagger@v2
-        with:
-          registry: "" # An empty string means Docker Hub
-          repository: "nextcloud"
-          # You can optionally use a regex filter. For example, to only get version tags:
-          # filter: '^[0-9]+\.[0-9]+\.[0-9]+$'
+        run: |
+          # Use the Docker Hub API to fetch tags and format them as a JSON array for the matrix
+          # This is more reliable than using a third-party action.
+          TAGS_JSON=$(curl -s "https://hub.docker.com/v2/repositories/library/nextcloud/tags?page_size=1000" | jq -r '[.results[].name] | @json')
+          echo "Found tags: $TAGS_JSON"
+          echo "tags=$TAGS_JSON" >> $GITHUB_OUTPUT
 
   # This job runs a matrix build for each tag found by the previous job
   build-for-each-tag:
