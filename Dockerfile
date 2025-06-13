@@ -25,6 +25,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     smbclient \
     && rm -rf /var/lib/apt/lists/*
 
+# Redirect Apache logs to stdout/stderr to bypass filesystem permission issues.
+RUN echo "\nErrorLog /dev/stderr\nTransferLog /dev/stdout\n" > /etc/apache2/conf-available/docker-logs.conf \
+    && a2enconf docker-logs
+
 # Create a crontab file for the Nextcloud cron job
 RUN echo "*/5  * * * * www-data php -f /var/www/html/cron.php" > /etc/cron.d/nextcloud-cron \
     # Give execution rights on the cron job
